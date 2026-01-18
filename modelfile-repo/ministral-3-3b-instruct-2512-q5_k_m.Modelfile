@@ -1,0 +1,20 @@
+# ollama-utils-metadata
+# hf_upstream: https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/blob/main/Ministral-3-3B-Instruct-2512-Q5_K_M.gguf
+# capabilities: tools,vision
+FROM ./Ministral-3-3B-Instruct-2512-Q5_K_M.gguf
+
+# Specialized parser for Mistral 3 logic
+PARSER ministral
+
+# Full context and recommended stability parameters
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.15
+PARAMETER top_p 1.0
+PARAMETER stop "</s>"
+PARAMETER stop "[INST]"
+PARAMETER stop "[/INST]"
+
+# Template: Basic structure that lets the PARSER handle the heavy lifting
+TEMPLATE """{{ if .System }}[SYSTEM_PROMPT]{{ .System }}[/SYSTEM_PROMPT]{{ end }}[INST]{{ .Prompt }}[/INST]"""
+
+SYSTEM """You are a helpful and concise AI assistant."""

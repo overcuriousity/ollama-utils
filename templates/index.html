@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Utils - Web Interface</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <h1>Ollama Utils</h1>
+            
+            <div class="stats-section">
+                <h2>System Status</h2>
+                
+                <div class="stat-group">
+                    <div class="stat-label">CPU Load</div>
+                    <div class="stat-value" id="cpu-load">--</div>
+                </div>
+                
+                <div class="stat-group">
+                    <div class="stat-label">RAM Usage</div>
+                    <div class="stat-value" id="ram-usage">--</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="ram-progress"></div>
+                    </div>
+                </div>
+                
+                <div class="stat-group">
+                    <div class="stat-label">VRAM Usage</div>
+                    <div class="stat-value" id="vram-usage">--</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="vram-progress"></div>
+                    </div>
+                </div>
+                
+                <div class="stat-group">
+                    <div class="stat-label">GPU Load</div>
+                    <div class="stat-value" id="gpu-load">--</div>
+                </div>
+            </div>
+            
+            <div class="running-models-section">
+                <h2>Running Models</h2>
+                <div id="running-models-list">
+                    <div class="no-models">No models loaded</div>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-button active" data-tab="models">Model Management</button>
+                <button class="tab-button" data-tab="performance">Performance Assessment</button>
+            </div>
+            
+            <!-- Model Management Tab -->
+            <div class="tab-content active" id="tab-models">
+                <div class="tab-header">
+                    <h2>Available Models</h2>
+                    <div class="tab-actions">
+                        <button class="btn btn-primary" id="btn-install">Import Model</button>
+                        <button class="btn btn-secondary" id="btn-refresh-models">Refresh</button>
+                    </div>
+                </div>
+                
+                <div class="models-list" id="models-list">
+                    <div class="loading">Loading models...</div>
+                </div>
+            </div>
+            
+            <!-- Performance Assessment Tab -->
+            <div class="tab-content" id="tab-performance">
+                <div class="tab-header">
+                    <h2>Performance Assessment</h2>
+                </div>
+                
+                <div class="performance-tools">
+                    <div class="tool-section">
+                        <h3>VRAM Test</h3>
+                        <p>Test a model's VRAM usage and CPU offloading. This will load the model with a minimal prompt and report actual VRAM consumption.</p>
+                        
+                        <div class="form-group">
+                            <label for="vram-test-model">Select Model:</label>
+                            <select id="vram-test-model" class="form-control">
+                                <option value="">-- Select a model --</option>
+                            </select>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="btn-run-vram-test">Run VRAM Test</button>
+                        
+                        <div id="vram-test-results" class="results-box"></div>
+                    </div>
+                    
+                    <div class="tool-section">
+                        <h3>Context Optimizer</h3>
+                        <p>Find the optimal context size (num_ctx) for a model based on available VRAM. This iteratively tests different context sizes.</p>
+                        
+                        <div class="form-group">
+                            <label for="optimizer-model">Select Model:</label>
+                            <select id="optimizer-model" class="form-control">
+                                <option value="">-- Select a model --</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="optimizer-overhead">GPU Overhead (GB):</label>
+                            <input type="number" id="optimizer-overhead" class="form-control" value="0.0" step="0.1" min="0">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="optimizer-max-turns">Max Iterations (0 = unlimited):</label>
+                            <input type="number" id="optimizer-max-turns" class="form-control" value="0" min="0">
+                        </div>
+                        
+                        <div class="button-group">
+                            <button class="btn btn-primary" id="btn-run-optimizer">Run Optimizer</button>
+                            <button class="btn btn-danger" id="btn-stop-optimizer" style="display:none;">Stop</button>
+                        </div>
+                        
+                        <div id="optimizer-results" class="results-box"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Import Model Modal -->
+    <div id="install-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Import Model</h2>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="install-options">
+                    <button class="install-option active" data-option="ollama">
+                        <h3>Ollama Library</h3>
+                        <p>Install from official Ollama model library</p>
+                    </button>
+                    <button class="install-option" data-option="huggingface">
+                        <h3>HuggingFace GGUF</h3>
+                        <p>Import GGUF model from HuggingFace</p>
+                    </button>
+                </div>
+                
+                <!-- Ollama Library Install -->
+                <div class="install-form active" id="install-ollama">
+                    <p class="info-text">
+                        Browse available models at <a href="https://ollama.com/library" target="_blank">ollama.com/library</a>
+                    </p>
+                    
+                    <div class="form-group">
+                        <label for="ollama-model-name">Model Name:</label>
+                        <input type="text" id="ollama-model-name" class="form-control" placeholder="e.g., llama2, mistral, phi">
+                        <small>Enter the model name with optional tag (e.g., llama2:7b)</small>
+                    </div>
+                    
+                    <button class="btn btn-primary" id="btn-install-ollama">Pull Model</button>
+                    
+                    <div id="ollama-install-output" class="output-box"></div>
+                </div>
+                
+                <!-- HuggingFace Install -->
+                <div class="install-form" id="install-huggingface">
+                    <p class="info-text">
+                        Paste a HuggingFace repository URL or direct link to a GGUF file.
+                    </p>
+                    
+                    <div class="form-group">
+                        <label for="hf-url">HuggingFace URL:</label>
+                        <input type="text" id="hf-url" class="form-control" placeholder="https://huggingface.co/TheBloke/Llama-2-7B-GGUF">
+                        <small>Repository URL or direct link to .gguf file</small>
+                    </div>
+                    
+                    <button class="btn btn-primary" id="btn-fetch-hf">Fetch Model Info</button>
+                    
+                    <div id="hf-install-output" class="output-box"></div>
+                    
+                    <!-- File selection section (for repo URLs) -->
+                    <div id="hf-file-select-section" style="display: none; margin-top: 15px;"></div>
+                    
+                    <div id="hf-modelfile-section" class="modelfile-section" style="display: none;">
+                        <h3>Modelfile Configuration</h3>
+                        <p class="warning-text">
+                            ⚠️ Please review and customize the Modelfile below. Refer to the 
+                            <a id="hf-repo-link" href="#" target="_blank">manufacturer's recommendations</a> 
+                            for optimal parameters.
+                        </p>
+                        <p class="info-text">
+                            💡 <strong>Tip:</strong> The <code># capabilities:</code> comment documents expected model features 
+                            like tool calling or vision. Ollama detects these automatically from the GGUF file metadata. 
+                            This comment helps you track which models support which features.
+                        </p>
+                        
+                        <div class="form-group">
+                            <label for="hf-model-name">Model Name:</label>
+                            <input type="text" id="hf-model-name" class="form-control" placeholder="model:tag">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="hf-modelfile">Modelfile:</label>
+                            <textarea id="hf-modelfile" class="form-control modelfile-editor" rows="20"></textarea>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="btn-create-hf-model">Create Model</button>
+                    </div>
+                    
+                    <div id="hf-install-output" class="output-box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Model Details Modal -->
+    <div id="model-details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="model-details-title">Model Details</h2>
+                <button class="modal-close" id="model-details-close">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div id="model-details-content"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modelfile Editor Modal -->
+    <div id="modelfile-editor-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modelfile-editor-title">Edit Modelfile</h2>
+                <button class="modal-close" id="modelfile-editor-close">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-group">
+                    <textarea id="modelfile-editor-content" class="form-control modelfile-editor" rows="25"></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="btn btn-primary" id="btn-save-modelfile">Save Changes</button>
+                    <button class="btn btn-secondary" id="btn-cancel-modelfile">Cancel</button>
+                </div>
+                
+                <div id="modelfile-save-output" class="output-box"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
