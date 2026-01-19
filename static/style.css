@@ -297,11 +297,81 @@ body {
 /* Models List */
 .models-list {
     display: grid;
+    gap: 20px;
+}
+
+/* Model Family Groups */
+.model-family-group {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.model-family-header {
+    padding: 12px 15px;
+    background-color: var(--bg-tertiary);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.model-family-header:hover {
+    background-color: #4a4a4a;
+}
+
+.model-family-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-primary);
+}
+
+.model-family-icon {
+    color: var(--accent-primary);
+    font-size: 12px;
+    transition: transform 0.2s;
+    display: inline-block;
+    width: 16px;
+}
+
+.model-family-name {
+    text-transform: capitalize;
+}
+
+.model-family-count {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.count-installed {
+    color: var(--success);
+}
+
+.count-not-installed {
+    color: var(--warning);
+}
+
+.model-family-content {
+    display: grid;
     gap: 15px;
+    padding: 15px;
+    max-height: 2000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+}
+
+.model-family-content.collapsed {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .model-card {
-    background-color: var(--bg-secondary);
+    background-color: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 15px;

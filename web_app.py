@@ -944,10 +944,26 @@ def api_optimize_context(model_name):
         # Use the existing find_optimal_context function from context-optimizer.py
         result = context_optimizer_module.find_optimal_context(model_name, max_turns=max_turns, overhead_gb=overhead_gb)
         
-        if not result or 'results' not in result:
+        if not result:
             return jsonify({
                 'success': False,
                 'error': 'Optimization failed or no results returned'
+            })
+        
+        # Check if optimization encountered an error
+        if 'error' in result:
+            return jsonify({
+                'success': False,
+                'error': result['error'],
+                'model': model_name,
+                'max_context': result.get('max_context', 0),
+                'current_context': result.get('current_ctx', 0)
+            })
+        
+        if 'results' not in result or len(result['results']) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'No test results available. Model may have failed to load.'
             })
         
         # Extract data from results
