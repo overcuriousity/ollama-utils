@@ -266,7 +266,15 @@ def find_optimal_context(model_name: str, max_turns: Optional[int], overhead_gb:
     results = []
     
     # Turn 1: Test current setting to establish baseline
+    # If current_ctx seems too high, start with a safer baseline
     test_ctx = current_ctx if current_ctx > 0 else 8192
+    
+    # Safety check: If current_ctx is very large and we know VRAM constraints, start smaller
+    if target_vram and current_ctx > 65536:
+        # Start with a more conservative baseline
+        test_ctx = 16384
+        print(f"⚠ Current num_ctx={current_ctx:,} is very large, starting with safer baseline={test_ctx:,}")
+    
     turn_label = f"Turn 1/{max_turns}" if max_turns else "Turn 1"
     print(f"{turn_label}: Testing num_ctx={test_ctx:,} (baseline)...", end=' ', flush=True)
     result = test_context_size(model_name, test_ctx)
@@ -276,41 +284,111 @@ def find_optimal_context(model_name: str, max_turns: Optional[int], overhead_gb:
         print(f"✓ VRAM: {result['vram_gb']:.2f} GB, Offload: {result['offload_pct']:.1f}% CPU" if result['offload_pct'] > 0 else f"✓ VRAM: {result['vram_gb']:.2f} GB, Offload: GPU only")
         baseline_vram = result['vram_gb']
         baseline_ctx = test_ctx
+    elif result and 'error' in result:
+        # First test failed - try with a much smaller context
+        error_msg = result['error']
+        if 'memory' in error_msg.lower() or 'oom' in error_msg.lower():
+            print(f"✗ OOM - baseline too large, retrying with num_ctx=8192")
+            test_ctx = 8192
+            print(f"{turn_label} (retry): Testing num_ctx={test_ctx:,} (safe baseline)...", end=' ', flush=True)
+            result = test_context_size(model_name, test_ctx)
+            
+            if result and 'error' not in result:
+                results.append(result)
+                print(f"✓ VRAM: {result['vram_gb']:.2f} GB, Offload: {result['offload_pct']:.1f}% CPU" if result['offload_pct'] > 0 else f"✓ VRAM: {result['vram_gb']:.2f} GB, Offload: GPU only")
+                baseline_vram = result['vram_gb']
+                baseline_ctx = test_ctx
+            else:
+                print("✗ Failed even with minimal context")
+                return {
+                    'model': model_name,
+                    'results': results,
+                    'max_context': max_context,
+                    'current_ctx': current_ctx,
+                    'vram_total': vram_total,
+                    'info': info,
+                    'error': 'Model failed to load even with minimal context (8K). Check VRAM availability.'
+                }
+        else:
+            print(f"✗ Error: {error_msg[:50]}")
+            return {
+                'model': model_name,
+                'results': results,
+                'max_context': max_context,
+                'current_ctx': current_ctx,
+                'vram_total': vram_total,
+                'info': info,
+                'error': error_msg
+            }
     else:
         print("✗ Failed")
-        return {'model': model_name, 'results': results, 'max_context': max_context, 'current_ctx': current_ctx, 'vram_total': vram_total, 'info': info}
+        return {
+            'model': model_name,
+            'results': results,
+            'max_context': max_context,
+            'current_ctx': current_ctx,
+            'vram_total': vram_total,
+            'info': info,
+            'error': 'Unknown failure during baseline test'
+        }
     
-    # Turn 2: Test a higher context to calculate VRAM/context ratio
-    # Try doubling the context or 32K, whichever is smaller
-    test_ctx_2 = min(baseline_ctx * 2, 32768, max_context)
-    if test_ctx_2 <= baseline_ctx:
-        test_ctx_2 = min(baseline_ctx + 16384, max_context)
-    # Round to multiple of 2048
-    test_ctx_2 = (test_ctx_2 // 2048) * 2048
+    # Turn 2: Test a different context to calculate VRAM/context ratio
+    # If baseline already shows offloading OR is at max_context, test LOWER
+    # Otherwise, test HIGHER
+    baseline_has_offload = results[0]['offload_pct'] > 0
+    
+    if baseline_has_offload or baseline_ctx >= max_context:
+        # Test lower context to find where it fits
+        test_ctx_2 = max(8192, baseline_ctx // 2)
+        # Round to multiple of 2048
+        test_ctx_2 = (test_ctx_2 // 2048) * 2048
+        calibration_label = "lower bound"
+    else:
+        # Try doubling the context or 32K, whichever is smaller
+        test_ctx_2 = min(baseline_ctx * 2, 32768, max_context)
+        if test_ctx_2 <= baseline_ctx:
+            test_ctx_2 = min(baseline_ctx + 16384, max_context)
+        # Round to multiple of 2048
+        test_ctx_2 = (test_ctx_2 // 2048) * 2048
+        calibration_label = "upper bound"
     
     turn_label = f"Turn 2/{max_turns}" if max_turns else "Turn 2"
-    print(f"{turn_label}: Testing num_ctx={test_ctx_2:,} (calibration)...", end=' ', flush=True)
+    print(f"{turn_label}: Testing num_ctx={test_ctx_2:,} ({calibration_label})...", end=' ', flush=True)
     result = test_context_size(model_name, test_ctx_2)
     
     if result and 'error' not in result:
         results.append(result)
         print(f"✓ VRAM: {result['vram_gb']:.2f} GB, Offload: {result['offload_pct']:.1f}% CPU" if result['offload_pct'] > 0 else f"✓ VRAM: {result['vram_gb']:.2f} GB, Offload: GPU only")
         
-        # Calculate VRAM per 1K context tokens
+        # Calculate VRAM per 1K context tokens (works for both higher and lower tests)
         vram_diff = result['vram_gb'] - baseline_vram
         ctx_diff = test_ctx_2 - baseline_ctx
-        if ctx_diff > 0:
-            vram_per_1k_ctx = (vram_diff / ctx_diff) * 1000
+        
+        if ctx_diff != 0:  # Can be positive or negative
+            vram_per_1k_ctx = abs(vram_diff / ctx_diff) * 1000
             print(f"         → Estimated VRAM usage: {vram_per_1k_ctx:.4f} GB per 1K context")
             
-            # Predict optimal context size
+            # Predict optimal context size based on available VRAM
             if target_vram and vram_per_1k_ctx > 0:
-                available_for_ctx = target_vram - baseline_vram
-                estimated_additional_ctx = (available_for_ctx / vram_per_1k_ctx) * 1000
-                predicted_optimal = baseline_ctx + int(estimated_additional_ctx)
-                # Round to multiple of 2048
+                # Find which result has no offload (if any) to use as reference
+                ref_result = result if result['offload_pct'] == 0 else (results[0] if results[0]['offload_pct'] == 0 else None)
+                
+                if ref_result:
+                    # We have a point that fits - extrapolate from there
+                    available_for_ctx = target_vram - ref_result['vram_gb']
+                    estimated_additional_ctx = (available_for_ctx / vram_per_1k_ctx) * 1000
+                    predicted_optimal = ref_result['num_ctx'] + int(estimated_additional_ctx)
+                else:
+                    # Neither fits - need to find what would fit
+                    # Start from the smaller test and work backwards
+                    smaller_result = results[0] if results[0]['num_ctx'] < result['num_ctx'] else result
+                    vram_needed_reduction = smaller_result['vram_gb'] - target_vram
+                    ctx_reduction_needed = (vram_needed_reduction / vram_per_1k_ctx) * 1000
+                    predicted_optimal = smaller_result['num_ctx'] - int(ctx_reduction_needed)
+                
+                # Round to multiple of 2048 and clamp to valid range
                 predicted_optimal = (predicted_optimal // 2048) * 2048
-                predicted_optimal = max(baseline_ctx, min(predicted_optimal, max_context))
+                predicted_optimal = max(2048, min(predicted_optimal, max_context))
                 
                 print(f"         → Predicted optimal context: {predicted_optimal:,}")
             else:
@@ -332,8 +410,15 @@ def find_optimal_context(model_name: str, max_turns: Optional[int], overhead_gb:
         predicted_optimal = None
     
     # Remaining turns: Test predicted optimal or use VRAM-based refinement
-    min_ctx = baseline_ctx
-    max_ctx = max_context
+    # Initialize search bounds based on whether baseline has offload
+    if baseline_has_offload:
+        # Search downward from baseline to find what fits
+        min_ctx = 2048  # Minimum practical context
+        max_ctx = baseline_ctx
+    else:
+        # Search upward from baseline to find max that fits
+        min_ctx = baseline_ctx
+        max_ctx = max_context
     
     turn = 2
     while True:
@@ -445,7 +530,24 @@ def find_optimal_context(model_name: str, max_turns: Optional[int], overhead_gb:
 
 def print_recommendation(analysis: Dict):
     """Print optimization recommendations."""
-    if not analysis or not analysis.get('results'):
+    if not analysis:
+        print("\n✗ No results to analyze")
+        return
+    
+    # Check for errors first
+    if 'error' in analysis:
+        print("\n" + "="*70)
+        print("OPTIMIZATION FAILED")
+        print("="*70)
+        print(f"\n✗ Error: {analysis['error']}")
+        print(f"\n💡 Suggestions:")
+        print(f"   1. Check that the model is installed: ollama list")
+        print(f"   2. Ensure sufficient VRAM is available")
+        print(f"   3. Try unloading other models: ollama ps")
+        print(f"   4. Consider using a smaller model or lower quantization")
+        return
+    
+    if not analysis.get('results'):
         print("\n✗ No results to analyze")
         return
     

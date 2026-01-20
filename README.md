@@ -127,6 +127,14 @@ The script will:
 - Ollama installed and available in PATH
 - Internet connection for downloading models
 
+### Plugins
+
+#### Reranking Endpoint (`plugins/reranking-endpoint/`)
+
+A FastAPI service that provides document reranking using cross-encoder models (BGE-reranker, Qwen3-Reranker, etc.) via Ollama.
+
+**⚠️ Limitation:** This is a workaround that uses embedding magnitudes instead of the proper classification head. Ollama doesn't expose the `/api/rerank` endpoint or classification layer that cross-encoder models are designed to use. Less accurate than sentence-transformers but integrated with Ollama's GPU scheduling. See [plugins/reranking-endpoint/README.md](plugins/reranking-endpoint/README.md) for detailed limitations.
+
 ### Other Scripts
 
 - `context-optimizer.py` - Find optimal num_ctx for models based on VRAM constraints

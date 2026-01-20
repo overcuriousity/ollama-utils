@@ -355,9 +355,9 @@ def create_ollama_model(modelfile_path, gguf_path, model_name, capabilities=None
         )
         
         if result.returncode == 0:
-            print(f"✓ Model '{model_name}' created successfully")
+            # Success - output will be shown by the caller
             if result.stdout:
-                print(f"  {result.stdout.strip()}")
+                print(result.stdout.strip())
         else:
             print(f"✗ Failed to create model")
             if result.stderr:

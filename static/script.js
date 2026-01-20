@@ -91,6 +91,7 @@ function initializeEventListeners() {
     // Model management
     document.getElementById('btn-install').addEventListener('click', openInstallModal);
     document.getElementById('btn-refresh-models').addEventListener('click', loadModels);
+    document.getElementById('btn-collapse-all').addEventListener('click', toggleAllFamilies);
     
     // Install options
     document.querySelectorAll('.install-option').forEach(option => {
@@ -254,7 +255,45 @@ function renderModels(models) {
         return;
     }
     
-    container.innerHTML = models.map(model => `
+    // Group models by family (everything before the colon)
+    const grouped = {};
+    models.forEach(model => {
+        const family = model.name.includes(':') ? model.name.split(':')[0] : 'other';
+        if (!grouped[family]) {
+            grouped[family] = [];
+        }
+        grouped[family].push(model);
+    });
+    
+    // Sort families alphabetically
+    const sortedFamilies = Object.keys(grouped).sort();
+    
+    // Render grouped models
+    container.innerHTML = sortedFamilies.map(family => {
+        const familyModels = grouped[family];
+        const installedCount = familyModels.filter(m => m.installed).length;
+        const notInstalledCount = familyModels.length - installedCount;
+        const familyId = `family-${family.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        
+        return `
+            <div class="model-family-group">
+                <div class="model-family-header" onclick="toggleModelFamily('${familyId}')">
+                    <div class="model-family-title">
+                        <span class="model-family-icon">▼</span>
+                        <span class="model-family-name">${escapeHtml(family)}</span>
+                        <span class="model-family-count">(<span class="count-installed">${installedCount} installed</span> / <span class="count-not-installed">${notInstalledCount} not installed</span>)</span>
+                    </div>
+                </div>
+                <div class="model-family-content" id="${familyId}">
+                    ${familyModels.map(model => renderModelCard(model)).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderModelCard(model) {
+    return `
         <div class="model-card ${!model.installed ? 'model-not-installed' : ''}" data-model-name="${escapeHtml(model.name)}">
             <div class="model-header">
                 <div class="model-name">
@@ -338,7 +377,45 @@ function renderModels(models) {
                 ${model.capabilities.map(cap => `<span class="badge badge-capability">${escapeHtml(cap)}</span>`).join('')}
             </div>
         </div>
-    `).join('');
+    `;
+}
+
+function toggleModelFamily(familyId) {
+    const content = document.getElementById(familyId);
+    const header = content.previousElementSibling;
+    const icon = header.querySelector('.model-family-icon');
+    
+    if (content.classList.contains('collapsed')) {
+        content.classList.remove('collapsed');
+        icon.textContent = '▼';
+    } else {
+        content.classList.add('collapsed');
+        icon.textContent = '▶';
+    }
+}
+
+function toggleAllFamilies() {
+    const allContents = document.querySelectorAll('.model-family-content');
+    const button = document.getElementById('btn-collapse-all');
+    
+    // Check if any are expanded
+    const anyExpanded = Array.from(allContents).some(content => !content.classList.contains('collapsed'));
+    
+    allContents.forEach(content => {
+        const header = content.previousElementSibling;
+        const icon = header.querySelector('.model-family-icon');
+        
+        if (anyExpanded) {
+            content.classList.add('collapsed');
+            icon.textContent = '▶';
+        } else {
+            content.classList.remove('collapsed');
+            icon.textContent = '▼';
+        }
+    });
+    
+    // Update button text
+    button.textContent = anyExpanded ? 'Expand All' : 'Collapse All';
 }
 
 async function deleteModel(modelName) {

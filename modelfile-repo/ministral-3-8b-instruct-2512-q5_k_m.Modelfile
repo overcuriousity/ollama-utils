@@ -7,7 +7,7 @@ FROM ./Ministral-3-8B-Instruct-2512-Q5_K_M.gguf
 PARSER ministral
 
 # Full context and recommended stability parameters
-PARAMETER num_ctx 32768
+PARAMETER num_ctx 75776
 PARAMETER temperature 0.15
 PARAMETER top_p 1.0
 PARAMETER stop "</s>"
